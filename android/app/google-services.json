@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "63952457289",
+    "firebase_url": "https://sunwise-d0824-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "sunwise-d0824",
+    "storage_bucket": "sunwise-d0824.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:63952457289:android:cb05de138173ff44017998",
+        "android_client_info": {
+          "package_name": "com.sunwise.sunwise_project"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBOPaYNx6URI-kAiFLsbMNyiJaE6wR1Wcg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
