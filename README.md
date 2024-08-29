@@ -1,16 +1,17 @@
-# sunwise_project
+# SunWise App
 
-A new Flutter project.
+Aplikasi ini dibuat menggunakan bahasa pemrograman dart dan menggunakan state management GetX. Aplikasi ini dapat menunjukan informasi real time berupa indeks uv, suhu, dan kelembapan udara melalui device IoT. Aplikasi ini juga dapat scan kulit kemudian memberikan rekomendasi berupa pakaian apa yang harus dipakai, lotion apa, dan topi seperti apa, selain itu juga terdapat hasil estimasi waktu yang aman untuk beraktivitas diluar ruangan.
 
-## Getting Started
+## Fitur
 
-This project is a starting point for a Flutter application.
+- **Informasi Real-time:** Menampilkan 3 informasi secara real-time yaitu indeks uv, suhu, dan kelembapan udara.
+- **Informasi Tipe Kulit:** Menampilkan 6 tipe kulit di tampilan Home.
+- **Scan Kulit:** Scan kulit menggunakan kamera dan algoritma Machine Learning untuk mendapatkan hasil klasifikasi kulit.
+- **Rekomendasi:** Merekomendasikan hal hal yang harus dilakukan pengguna demi mencegah bahanya paparan sinar UV.
+- **Estimasi Waktu Sunburn:** Menampilkan estimasi waktu untuk beraktivitas diluar sebelum kulit terkena sunburn untuk pengguna.
 
-A few resources to get you started if this is your first Flutter project:
+## Teknologi
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- **Bahasa Pemrograman:** Dart
+- **State management:** Getx
+- **Platform:** Android & Ios
