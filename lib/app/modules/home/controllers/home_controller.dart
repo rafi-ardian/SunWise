@@ -9,6 +9,8 @@ import 'package:path/path.dart' as path;
 import 'package:image/image.dart' as img;
 import 'package:sunwise_project/app/modules/result_screen/views/result_screen_view.dart';
 import 'package:sunwise_project/themes.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 class HomeController extends GetxController {
   var imagePath = ''.obs;
@@ -17,32 +19,36 @@ class HomeController extends GetxController {
   RxMap responseData = {}.obs;
   RxInt uvValue = 0.obs;
   RxInt humidity = 0.obs;
+  RxString errorMessage = ''.obs;
   RxInt temperature = 0.obs;
   RxBool isLoading = false.obs;
   final DatabaseReference _dbRef =
       FirebaseDatabase.instance.ref().child('sensor');
 
-  // get real time data from IOT device
   @override
   void onInit() {
     super.onInit();
+    _loadData();
+  }
+
+  void _loadData() {
+    isLoading.value = true;
     _dbRef.onValue.listen((event) {
-      var snapshotValue = event.snapshot.value;
-      if (snapshotValue != null && snapshotValue is Map) {
-        var data = snapshotValue as Map;
-        if (data.containsKey('humidity') && data['humidity'] is num) {
-          humidity.value = data['humidity'].toInt();
-          print(humidity);
+      try {
+        final data = event.snapshot.value as Map?;
+        if (data != null) {
+          humidity.value = (data['humidity'] as num?)?.toInt() ?? 0;
+          temperature.value = (data['temperature'] as num?)?.toInt() ?? 0;
+          uvValue.value = (data['uvIndex'] as num?)?.toInt() ?? 0;
         }
-        if (data.containsKey('temperature') && data['temperature'] is num) {
-          temperature.value = data['temperature'].toInt();
-          print(temperature);
-        }
-        if (data.containsKey('uvIndex') && data['uvIndex'] is num) {
-          uvValue.value = data['uvIndex'].toInt();
-          print(uvValue);
-        }
+        isLoading.value = false;
+      } catch (e) {
+        errorMessage.value = 'Error loading data: $e';
+        isLoading.value = false;
       }
+    }, onError: (error) {
+      errorMessage.value = 'Error: $error';
+      isLoading.value = false;
     });
   }
 
@@ -65,59 +71,169 @@ class HomeController extends GetxController {
     }
   }
 
-  // convert to PNG
   Future<File> _convertToPNG(File imageFile) async {
+    return await compute(_convertToPNGIsolate, imageFile.path);
+  }
+
+  static File _convertToPNGIsolate(String imagePath) {
+    File imageFile = File(imagePath);
     final originalImage = img.decodeImage(imageFile.readAsBytesSync());
     final pngImage = img.encodePng(originalImage!);
-    final pngFile = File('${path.withoutExtension(imageFile.path)}.png');
-    await pngFile.writeAsBytes(pngImage);
+    final pngFile = File('${path.withoutExtension(imagePath)}.png');
+    pngFile.writeAsBytesSync(pngImage);
     return pngFile;
   }
 
-  // send data to api
-  Future<void> sendData(File imageFile, int uvValue) async {
-    var url = "https://uvbeneran-j5nhigjovq-uc.a.run.app/predict";
+  Future<File> _compressImage(File file) async {
+    final result = await FlutterImageCompress.compressAndGetFile(
+      file.absolute.path,
+      file.absolute.path.replaceAll('.png', '_compressed.jpg'),
+      quality: 88,
+    );
+    return File(result!.path);
+  }
 
+  Future<void> sendData(File imageFile, int uvValue) async {
+    final client = http.Client();
     try {
+      var url = "https://uvbeneran-j5nhigjovq-uc.a.run.app/predict";
       var request = http.MultipartRequest('POST', Uri.parse(url));
       request.fields['uv_index'] = uvValue.toString();
-      request.files.add(await http.MultipartFile.fromPath(
-        'imagefile',
-        imageFile.path,
-        filename: path
-            .basename(imageFile.path), // Menggunakan basename dari package path
-      ));
 
-      var response = await request.send();
-      isLoading.value = true;
-      // Setelah mendapatkan respons dari API
+      var compressedFile = await _compressImage(imageFile);
+      var length = await compressedFile.length();
+      var stream = http.ByteStream(compressedFile.openRead());
+
+      var multipartFile = http.MultipartFile('imagefile', stream, length,
+          filename: path.basename(compressedFile.path));
+      request.files.add(multipartFile);
+
+      var streamedResponse = await client.send(request);
+      var response = await http.Response.fromStream(streamedResponse);
+
       if (response.statusCode == 200) {
-        var responseData = await response.stream.bytesToString();
-        var jsonData = jsonDecode(responseData);
-        estimation.value = (jsonData['data']['Estimation']);
-        // Ubah ke String dan hilangkan bagian desimal
-        var estimationString = estimation.value.toStringAsFixed(0);
-        // trim the text
-        prediction.value = (jsonData['data']['Prediction']).toString();
-        List<String> predictionParts = prediction.split(' ');
-        prediction.value = predictionParts[0];
-        this.responseData.value =
-            jsonData; // Setel variabel responseData dengan respons data
-        isLoading.value = false;
-        Get.to(() => ResultScreenView(), arguments: {
-          'estimation': estimationString,
-          'prediction': prediction.value,
-        });
-        print('Response data: $jsonData');
+        try {
+          var jsonData = jsonDecode(response.body);
+          estimation.value =
+              (jsonData['data']['Estimation'] as num?)?.toDouble() ?? 0.0;
+          var estimationString = estimation.value.toStringAsFixed(0);
+          prediction.value = ((jsonData['data']['Prediction'] as String?) ?? '')
+              .split(' ')
+              .first;
+          this.responseData.value = jsonData;
+          isLoading.value = false;
+          Get.to(() => ResultScreenView(), arguments: {
+            'estimation': estimationString,
+            'prediction': prediction.value,
+          });
+        } catch (e) {
+          print('Error parsing response: $e');
+          isLoading.value = false;
+        }
       } else {
-        var responseData = await response.stream.bytesToString();
         print(
-            'Error with status code: ${response.statusCode}, response: $responseData');
+            'Error with status code: ${response.statusCode}, response: ${response.body}');
       }
     } catch (e) {
       print('Error sending data: $e');
+    } finally {
+      client.close();
     }
   }
+
+  // Future<void> sendData(File imageFile, int uvValue) async {
+  //   final client = http.Client();
+  //   try {
+  //     var url = "https://uvbeneran-j5nhigjovq-uc.a.run.app/predict";
+  //     var request = http.MultipartRequest('POST', Uri.parse(url));
+  //     request.fields['uv_index'] = uvValue.toString();
+
+  //     var compressedFile = await _compressImage(imageFile);
+  //     var length = await compressedFile.length();
+  //     var stream = http.ByteStream(compressedFile.openRead());
+
+  //     var multipartFile = http.MultipartFile('imagefile', stream, length,
+  //         filename: path.basename(compressedFile.path));
+  //     request.files.add(multipartFile);
+
+  //     var streamedResponse = await client.send(request);
+  //     var response = await http.Response.fromStream(streamedResponse);
+
+  //     if (response.statusCode == 200) {
+  //       try {
+  //         var responseData = await response.stream.bytesToString();
+  //         var jsonData = jsonDecode(responseData);
+  //         estimation.value =
+  //             (jsonData['data']['Estimation'] as num?)?.toDouble() ?? 0.0;
+  //         var estimationString = estimation.value.toStringAsFixed(0);
+  //         prediction.value = ((jsonData['data']['Prediction'] as String?) ?? '')
+  //             .split(' ')
+  //             .first;
+  //         this.responseData.value = jsonData;
+  //         isLoading.value = false;
+  //         Get.to(() => ResultScreenView(), arguments: {
+  //           'estimation': estimationString,
+  //           'prediction': prediction.value,
+  //         });
+  //       } catch (e) {
+  //         print('Error parsing response: $e');
+  //         isLoading.value = false;
+  //       }
+  //     } else {
+  //       print(
+  //           'Error with status code: ${response.statusCode}, response: ${response.body}');
+  //     }
+  //   } catch (e) {
+  //     print('Error sending data: $e');
+  //   } finally {
+  //     client.close();
+  //   }
+  // }
+
+  // // send data to api
+  // Future<void> sendData(File imageFile, int uvValue) async {
+  //   var url = "https://uvbeneran-j5nhigjovq-uc.a.run.app/predict";
+
+  //   try {
+  //     var request = http.MultipartRequest('POST', Uri.parse(url));
+  //     request.fields['uv_index'] = uvValue.toString();
+  //     request.files.add(await http.MultipartFile.fromPath(
+  //       'imagefile',
+  //       imageFile.path,
+  //       filename: path
+  //           .basename(imageFile.path), // Menggunakan basename dari package path
+  //     ));
+
+  //     var response = await request.send();
+  //     isLoading.value = true;
+
+  //     if (response.statusCode == 200) {
+  //       try {
+  //         var responseData = await response.stream.bytesToString();
+  //         var jsonData = jsonDecode(responseData);
+  //         estimation.value =
+  //             (jsonData['data']['Estimation'] as num?)?.toDouble() ?? 0.0;
+  //         var estimationString = estimation.value.toStringAsFixed(0);
+  //         prediction.value = ((jsonData['data']['Prediction'] as String?) ?? '')
+  //             .split(' ')
+  //             .first;
+  //         this.responseData.value = jsonData;
+  //         isLoading.value = false;
+  //         Get.to(() => ResultScreenView(), arguments: {
+  //           'estimation': estimationString,
+  //           'prediction': prediction.value,
+  //         });
+  //       } catch (e) {
+  //         print('Error parsing response: $e');
+  //         isLoading.value = false;
+  //       }
+  //     } else {
+  //       // Handle error
+  //     }
+  //   } catch (e) {
+  //     print('Error sending data: $e');
+  //   }
+  // }
 
   // get background color according to uv
   Color get progressColor {
